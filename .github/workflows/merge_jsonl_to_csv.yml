@@ -1,0 +1,84 @@
+name: merge-jsonl-to-csv
+
+on:
+  workflow_dispatch:        # run only when manually triggered
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Build unified CSV from all JSONL snapshots
+        run: |
+          python - << 'PY'
+          import gzip, json, csv
+          from pathlib import Path
+
+          RAW_ROOT = Path("data/raw")
+          EXPORT_DIR = Path("exports")
+          EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+          # Columns produced by your flatten_record()
+          COLUMNS = [
+              "api_call_time",
+              "lastupdated",
+              "status_timestamp",
+              "zone_number",
+              "status_description",
+              "kerbsideid",
+              "location_lon",
+              "location_lat",
+          ]
+
+          out_csv = EXPORT_DIR / "all_parking_data.csv"
+
+          def iter_all_rows():
+              files = sorted(RAW_ROOT.rglob("*.jsonl.gz"))
+              for jf in files:
+                  with gzip.open(jf, "rt", encoding="utf-8") as fh:
+                      for line in fh:
+                          line = line.strip()
+                          if not line:
+                              continue
+                          try:
+                              yield json.loads(line)
+                          except Exception:
+                              # skip malformed line without failing whole job
+                              continue
+
+          tmp = out_csv.with_suffix(out_csv.suffix + ".tmp")
+          with tmp.open("w", newline="", encoding="utf-8") as f:
+              w = csv.DictWriter(f, fieldnames=COLUMNS)
+              w.writeheader()
+              for row in iter_all_rows():
+                  w.writerow({c: row.get(c, "") for c in COLUMNS})
+          tmp.replace(out_csv)
+
+          print(f"[merge] Wrote {out_csv} ({out_csv.stat().st_size} bytes)")
+          PY
+
+      - name: Commit & push CSV export
+        run: |
+          if [ -n "$(git status --porcelain exports/ || true)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git pull --rebase
+            git add exports/all_parking_data.csv
+            git commit -m "exports: unified CSV $(date -u +'%Y-%m-%dT%H:%MZ')"
+            git push
+          else
+            echo "No CSV changes."
+          fi
