@@ -1,4 +1,4 @@
-name: merge-jsonl-to-csv
+name: merge-jsonl-to-csv-fix
 
 on:
   workflow_dispatch:        # run only when manually triggered - edit
