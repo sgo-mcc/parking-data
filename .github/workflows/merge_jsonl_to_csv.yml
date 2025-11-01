@@ -1,7 +1,7 @@
 name: merge-jsonl-to-csv
 
 on:
-  workflow_dispatch:        # run only when manually triggered
+  workflow_dispatch:        # run only when manually triggered - edit
 
 permissions:
   contents: write
